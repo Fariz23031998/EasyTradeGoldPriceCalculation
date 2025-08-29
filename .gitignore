@@ -1,0 +1,13 @@
+/venv/
+/.idea/
+/logs/
+/.git/
+/dist/
+/build/
+/__pycache__/
+*.pyc
+*.env
+*.json
+*.spec
+*.bin
+GoldPriceCalculation.spec
