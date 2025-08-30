@@ -207,6 +207,11 @@ VALUES (%s, %s, %s, %s, %s, %s)
             price_id = price_info[0]
             cur.execute(query_update, (prc_value, prc_value_cur, price_id))
 
+    def update_cost(self, avgc_good: int, avgc_object: int, avgc_value: float, avgc_value_cur: float, cur):
+        cur.execute(
+            "UPDATE dir_avg_cost SET avgc_object = %s, avgc_value = %s, avgc_value_cur = %s WHERE avgc_good = %s",
+            (avgc_object, avgc_value, avgc_value_cur, avgc_good)
+        )
 
     def update_prices_and_costs(self):
         try:
@@ -241,11 +246,11 @@ VALUES (%s, %s, %s, %s, %s, %s)
             price_type_id = price_type_data.get("price_type")
 
             for row in document_data:
-                markup = float(row[5])
+                vendor_markup = float(row[5])
                 weight = value_to_float(s=row[4])
                 operation_id = row[0]
                 operation_good = row[1]
-                gold_cost_with_markup = weight * markup
+                gold_cost_with_markup = weight * vendor_markup
                 gold_cost_in_local_currency = gold_cost_with_markup * gold_exchange_rate
                 gold_price = gold_cost_with_markup * self.markup
                 gold_price_local_currency = gold_price * gold_exchange_rate
@@ -264,6 +269,14 @@ VALUES (%s, %s, %s, %s, %s, %s)
                     prc_value_cur=gold_price,
                     prc_type=price_type_id,
                     prc_good=operation_good,
+                    cur=mysql_cursor
+                )
+
+                self.update_cost(
+                    avgc_good=operation_good,
+                    avgc_value=gold_cost_in_local_currency,
+                    avgc_object=object_id,
+                    avgc_value_cur=gold_cost_with_markup,
                     cur=mysql_cursor
                 )
 
