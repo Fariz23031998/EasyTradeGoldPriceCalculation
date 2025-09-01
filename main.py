@@ -15,7 +15,7 @@ class UpdateData:
         self.user = self.config['user']
         self.password = self.config['password']
         self.check_time = self.config['check_time']
-        self.markup = (self.config['markup'] / 100) + 1
+        self.store_markup = (self.config['markup'] / 100) + 1
         self.weight_table_name = self.config['weight_table_name']
 
         self.mysql_conn = None
@@ -245,41 +245,70 @@ VALUES (%s, %s, %s, %s, %s, %s)
 
             price_type_id = price_type_data.get("price_type")
 
+            # Prepare batch updates
+            operation_updates = []
+            price_updates = []
+            cost_updates = []
+
             for row in document_data:
-                vendor_markup = float(row[5])
-                weight = value_to_float(s=row[4])
                 operation_id = row[0]
                 operation_good = row[1]
-                gold_cost_with_markup = weight * vendor_markup
+                weight = value_to_float(s=row[4])
+                vendor_markup = float(row[5])
+
+                # fast math (mul instead of div)
+                gold_cost_with_markup = weight * (1 + vendor_markup * 0.01)
                 gold_cost_in_local_currency = gold_cost_with_markup * gold_exchange_rate
-                gold_price = gold_cost_with_markup * self.markup
+                gold_price = gold_cost_with_markup * self.store_markup
                 gold_price_local_currency = gold_price * gold_exchange_rate
-                self.update_operation_prop(
-                    oap_cost=gold_cost_in_local_currency,
-                    oap_cost_cur=gold_cost_with_markup,
-                    oap_exchange_rate=gold_exchange_rate,
-                    oap_price1=gold_price_local_currency,
-                    oap_price2=gold_price,
-                    oap_operation=operation_id,
-                    cur=mysql_cursor
-                )
 
-                self.update_or_insert_prices(
-                    prc_value=gold_price_local_currency,
-                    prc_value_cur=gold_price,
-                    prc_type=price_type_id,
-                    prc_good=operation_good,
-                    cur=mysql_cursor
-                )
+                # Collect data for bulk update
+                operation_updates.append((
+                    gold_cost_in_local_currency,
+                    gold_cost_with_markup,
+                    gold_exchange_rate,
+                    gold_price_local_currency,
+                    gold_price,
+                    operation_id
+                ))
 
-                self.update_cost(
-                    avgc_good=operation_good,
-                    avgc_value=gold_cost_in_local_currency,
-                    avgc_object=object_id,
-                    avgc_value_cur=gold_cost_with_markup,
-                    cur=mysql_cursor
-                )
+                price_updates.append((
+                    price_type_id,
+                    operation_good,
+                    gold_price_local_currency,
+                    gold_price
+                ))
 
+                cost_updates.append((
+                    gold_cost_in_local_currency,
+                    gold_cost_with_markup,
+                    object_id,
+                    operation_good
+                ))
+
+            # Bulk updates
+            mysql_cursor.executemany("""
+                UPDATE operations_additional_prop
+                SET oap_cost=%s, oap_cost_cur=%s, oap_exchange_rate=%s, oap_price1=%s, oap_price2=%s
+                WHERE oap_operation=%s
+            """, operation_updates)
+
+            mysql_cursor.executemany("""
+                INSERT INTO dir_prices (prc_type, prc_good, prc_value, prc_value_cur, prc_recalculate, prc_deleted)
+                VALUES (%s, %s, %s, %s, 1, 0)
+                ON DUPLICATE KEY UPDATE
+                    prc_value = VALUES(prc_value),
+                    prc_value_cur = VALUES(prc_value_cur),
+                    prc_recalculate = 1
+            """, price_updates)
+
+            mysql_cursor.executemany("""
+                UPDATE dir_avg_cost
+                SET avgc_value=%s, avgc_value_cur=%s
+                WHERE avgc_object=%s AND avgc_good=%s
+            """, cost_updates)
+
+            # Commit once
             self.mysql_conn.commit()
             write_log_file(f"Price updated successfully! - doc: {doc_id}")
 
