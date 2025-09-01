@@ -173,46 +173,6 @@ WHERE o.opr_type = 1 AND o.opr_document = %s
             return {"ok": False, "error": error_msg}
 
 
-    def update_operation_prop(self, oap_cost, oap_cost_cur, oap_exchange_rate,
-                              oap_price1, oap_price2, oap_operation, cur):
-        query = """
-UPDATE operations_additional_prop
-SET oap_cost = %s,
-    oap_cost_cur = %s,
-    oap_exchange_rate = %s,
-    oap_price1 = %s,
-    oap_price2 = %s
-WHERE oap_operation = %s
-"""
-        cur.execute(query, (oap_cost, oap_cost_cur, oap_exchange_rate, oap_price1, oap_price2, oap_operation))
-
-    def update_or_insert_prices(self, prc_value, prc_value_cur, prc_type, prc_good, cur):
-        query_update = """
-UPDATE dir_prices
-SET prc_value = %s,
-    prc_value_cur = %s,
-    prc_recalculate = 1
-WHERE prc_id = %s
-"""
-        query_insert = """
-INSERT INTO dir_prices (prc_type, prc_good, prc_value, prc_value_cur, prc_recalculate, prc_deleted)
-VALUES (%s, %s, %s, %s, %s, %s)
-"""
-        query_select = "SELECT prc_id FROM dir_prices WHERE prc_type = %s AND prc_good = %s"
-        cur.execute(query_select, (prc_type, prc_good))
-        price_info = cur.fetchone()
-        if not price_info:
-            cur.execute(query_insert, (prc_type, prc_good, prc_value, prc_value_cur, 1, 0))
-        else:
-            price_id = price_info[0]
-            cur.execute(query_update, (prc_value, prc_value_cur, price_id))
-
-    def update_cost(self, avgc_good: int, avgc_object: int, avgc_value: float, avgc_value_cur: float, cur):
-        cur.execute(
-            "UPDATE dir_avg_cost SET avgc_object = %s, avgc_value = %s, avgc_value_cur = %s WHERE avgc_good = %s",
-            (avgc_object, avgc_value, avgc_value_cur, avgc_good)
-        )
-
     def update_prices_and_costs(self):
         try:
             mysql_cursor = self.mysql_conn.cursor()
